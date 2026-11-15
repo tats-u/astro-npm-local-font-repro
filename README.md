@@ -1,43 +1,49 @@
-# Astro Starter Kit: Minimal
+# Minimal reproduction of Astro's local npm font loading failure
+
+This project reproduces a `CannotFetchFontFile` build failure when Astro tries to read a `file:` URL returned by `fontProviders.npm({ remote: false })`.
+
+## Environment
+
+- Astro 7.4.12
+- unifont 1.0.3 (an Astro dependency pinned in `pnpm-lock.yaml`)
+- `@fontsource-variable/inter` 5.3.0
+- pnpm 12.21.0
+- Reproduced with Node.js 26.13.1 on Windows x64
+- No adapters or integrations
+
+Use Node.js 22.23.4 or later.
+
+## Steps to reproduce
+
+Run these commands from the project root.
 
 ```sh
-pnpm create astro@latest -- --template minimal
+pnpm install --frozen-lockfile
+pnpm why unifont
+node --run build
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+## Actual result
 
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
+The build fails with exit code 1 even though the installed WOFF2 file exists.
 
 ```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
+[assets] Copying fonts (7 files)...
+[CannotFetchFontFile] An error occurred while fetching the font file from file:///<project>/node_modules/@fontsource-variable/inter/files/inter-cyrillic-ext-wght-normal.woff2.
+  Caused by:
+  fetch failed
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+`<project>` replaces the absolute project path in the log. The configured family name, `Inter Variable`, matches the name in the package's CSS. No font-family-not-found warning is emitted.
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+## Expected result
 
-Any static assets, like images, can be placed in the `public/` directory.
+Astro reads the locally installed font files, completes the build successfully, and includes seven WOFF2 files in the output.
 
-## 🧞 Commands
+## Suspected cause and verified workaround
 
-All commands are run from the root of the project, from a terminal:
+With `remote: false`, unifont's npm provider returns local font paths as `file:` URLs. Astro 7.4.12's `CachedFontFetcher` reads a file only when `isAbsolute(url)` is true and otherwise passes the URL to `fetch(url)`. This appears to prevent `file:` URLs from being read as local files.
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `pnpm install`             | Installs dependencies                            |
-| `pnpm dev`             | Starts local dev server at `localhost:4321`      |
-| `pnpm build`           | Build your production site to `./dist/`          |
-| `pnpm preview`         | Preview your build locally, before deploying     |
-| `pnpm astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `pnpm astro -- --help` | Get help using the Astro CLI                     |
+Converting the `file:` URLs in the provider's returned `src` entries to absolute filesystem paths with `fileURLToPath()` allows the same configuration to build successfully.
 
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+Reproduction on Linux and macOS, and the first affected version, have not been verified.
